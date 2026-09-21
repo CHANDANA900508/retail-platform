@@ -155,7 +155,7 @@ pipeline {
                      * Wait for Docker health check.
                      */
                     bat """
-                     sleep 15
+                     sleep time: 15,unit: 'SECONDS'
                     """
 
                     def health = bat(
