@@ -94,13 +94,15 @@ pipeline {
                         file: 'previous-production.txt',
                         text: oldImage
                     )
+                    def paymentStatus = params.VERSION == '4.2.2' ? 'BROKEN' : 'FIXED'
+                    echo "Candidate payment status : ${paymentStatus}"
                     bat """
                         docker rm -f retail-app-candidate 2>NUL || exit /b 0
                         docker run -d --name retail-app-candidate ^
                           -p 8082:8081 ^
                           -e APP_VERSION=${params.VERSION} ^
                           -e APP_ENV=${params.ENVIRONMENT} ^
-                          -e PAYMENT_STATUS=FIXED ^
+                          -e PAYMENT_STATUS=${paymentStatus} ^
                           ${IMAGE_NAME}:${params.VERSION}
                     """
                     echo "Candidate ${IMAGE_NAME}:${params.VERSION} started on port 8082"
