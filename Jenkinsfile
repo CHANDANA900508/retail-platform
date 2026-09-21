@@ -61,11 +61,11 @@ pipeline {
                 bat "git fetch --tags --force origin"
                 script {
                     def tagExists = bat(
-                        script: "git tag --list v${params.VERSION}",
+                        script: "git ls-remote --tags origin refs/tags/v${params.VERSION}",
                         returnStdout: true
                     ).trim()
 
-                    if (tagExists != "v${params.VERSION}") {
+                    if (tagExists == "") {
                         error("Git tag v${params.VERSION} does not exist")
                     }
 
