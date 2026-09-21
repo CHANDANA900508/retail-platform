@@ -13,6 +13,7 @@ def home():
         "application": "Retail Platform",
         "version": VERSION,
         "payment_status": PAYMENT_STATUS,
+         "environment": os.getenv("APP_ENV", "development"),
         "status": "running"
     })
 
