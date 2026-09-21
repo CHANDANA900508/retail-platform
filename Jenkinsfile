@@ -154,9 +154,8 @@ pipeline {
                     /*
                      * Wait for Docker health check.
                      */
-                    bat """
-                     sleep time: 15,unit: 'SECONDS'
-                    """
+                    
+                     sleep(time: 15,unit: 'SECONDS')
 
                     def health = bat(
                         script: '@echo off\ndocker inspect -f "{{.State.Health.Status}}" retail-app-candidate',
