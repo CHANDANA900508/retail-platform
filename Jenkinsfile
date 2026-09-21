@@ -155,7 +155,7 @@ pipeline {
                      * Wait for Docker health check.
                      */
                     bat """
-                        powershell -Command "Start-Sleep -Seconds 15"
+                     sleep 15
                     """
 
                     def health = bat(
