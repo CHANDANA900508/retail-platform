@@ -100,11 +100,15 @@ pipeline {
                         script: "docker ps -q -f name=retail-app-prod",
                         returnStdout: true
                     ).trim()
+                   def oldImage = 'NONE'
 
-                    
-                    
-
-                    echo "Previous production container: ${oldContainer ?: 'NONE'}"
+               if (oldContainer) {
+                  oldImage = bat(
+                     script: "docker inspect -f \"{{.Config.Image}}\" retail-app-prod",
+                   returnStdout: true
+                 ).trim()
+} 
+                   echo "Previous production container: ${oldContainer ?: 'NONE'}"
                     echo "Previous production image    : ${oldImage}"
 
                     writeFile(
