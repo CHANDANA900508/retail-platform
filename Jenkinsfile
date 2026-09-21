@@ -58,10 +58,11 @@ pipeline {
 
         stage('Validate Git Version') {
             steps {
-                bat "git fetch --tags --force origin"
+                bat 'git fetch --tags --force origin'
+
                 script {
                     def tagExists = bat(
-                        script: "git ls-remote --tags origin refs/tags/v${params.VERSION}",
+                        script: "@echo off\ngit ls-remote --tags origin refs/tags/v${params.VERSION}",
                         returnStdout: true
                     ).trim()
 
@@ -70,19 +71,23 @@ pipeline {
                     }
 
                     def commit = bat(
-                        script: "git rev-list -n 1 v${params.VERSION}",
+                        script: "@echo off\ngit rev-list -n 1 v${params.VERSION}",
                         returnStdout: true
                     ).trim()
 
-                    echo "Selected Git tag : v${params.VERSION}"
-                    echo "Selected Git commit: ${commit}"
+                    echo "Selected Git tag    : v${params.VERSION}"
+                    echo "Selected Git commit : ${commit}"
                 }
             }
         }
 
         stage('Build Docker Image') {
             steps {
-                bat "docker build -t ${IMAGE_NAME}:${params.VERSION} ."
+                bat """
+                    docker build ^
+                      --build-arg APP_VERSION=${params.VERSION} ^
+                      -t ${IMAGE_NAME}:${params.VERSION} .
+                """
             }
         }
 
@@ -96,28 +101,46 @@ pipeline {
             steps {
                 script {
 
+                    /*
+                     * Find currently running production container.
+                     * @echo off prevents Jenkins from capturing the
+                     * command itself in returnStdout.
+                     */
                     def oldContainer = bat(
-                        script: "docker ps -q -f name=retail-app-prod",
+                        script: '@echo off\ndocker ps -q -f "name=^retail-app-prod$"',
                         returnStdout: true
                     ).trim()
-                   def oldImage = 'NONE'
 
-               if (oldContainer) {
-                  oldImage = bat(
-                     script: "docker inspect -f \"{{.Config.Image}}\" retail-app-prod",
-                   returnStdout: true
-                 ).trim()
-} 
-                   echo "Previous production container: ${oldContainer ?: 'NONE'}"
-                    echo "Previous production image    : ${oldImage}"
+                    def oldImage = 'NONE'
 
+                    if (oldContainer) {
+                        oldImage = bat(
+                            script: '@echo off\ndocker inspect -f "{{.Config.Image}}" retail-app-prod',
+                            returnStdout: true
+                        ).trim()
+                    }
+
+                    echo "======================================"
+                    echo "OLD PRODUCTION CONTAINER : ${oldContainer ?: 'NONE'}"
+                    echo "OLD PRODUCTION IMAGE     : ${oldImage}"
+                    echo "NEW PRODUCTION IMAGE     : ${IMAGE_NAME}:${params.VERSION}"
+                    echo "======================================"
+
+                    /*
+                     * Record the old production image.
+                     */
                     writeFile(
                         file: 'previous-production.txt',
                         text: oldImage
                     )
 
+                    /*
+                     * Start candidate FIRST.
+                     * Old production is still running.
+                     */
                     bat """
                         docker rm -f retail-app-candidate 2>NUL || exit /b 0
+
                         docker run -d --name retail-app-candidate ^
                           -p 8082:8081 ^
                           -e APP_VERSION=${params.VERSION} ^
@@ -128,31 +151,56 @@ pipeline {
 
                     echo "Candidate ${IMAGE_NAME}:${params.VERSION} started on port 8082"
 
+                    /*
+                     * Wait for Docker health check.
+                     */
                     bat """
                         powershell -Command "Start-Sleep -Seconds 15"
-                        docker inspect -f "{{.State.Health.Status}}" retail-app-candidate
                     """
 
                     def health = bat(
-                        script: 'docker inspect -f "{{.State.Health.Status}}" retail-app-candidate',
+                        script: '@echo off\ndocker inspect -f "{{.State.Health.Status}}" retail-app-candidate',
                         returnStdout: true
                     ).trim()
 
                     echo "Candidate health status: ${health}"
 
+                    /*
+                     * If candidate is unhealthy, rollback.
+                     */
                     if (health != 'healthy') {
-                        echo "Candidate health check FAILED"
-                        bat "docker rm -f retail-app-candidate"
-                        rollbackProduction(oldImage)
-                        error("Deployment failed: candidate health check failed. Automatic rollback completed.")
+
+                        echo "======================================"
+                        echo "CANDIDATE HEALTH CHECK FAILED"
+                        echo "Starting automatic rollback..."
+                        echo "======================================"
+
+                        bat "docker rm -f retail-app-candidate 2>NUL || exit /b 0"
+
+                        if (oldImage != 'NONE' && oldImage != '') {
+                            rollbackProduction(oldImage)
+                        } else {
+                            echo "No previous production image exists."
+                            echo "This is the first deployment."
+                        }
+
+                        error("Deployment failed. Automatic rollback was required.")
                     }
 
                     echo "Candidate health check PASSED"
 
+                    /*
+                     * NEW candidate is healthy.
+                     * Now old production can be removed.
+                     */
                     if (oldContainer) {
+                        echo "Removing old production container..."
                         bat "docker rm -f retail-app-prod"
                     }
 
+                    /*
+                     * Start NEW production version.
+                     */
                     bat """
                         docker run -d --name retail-app-prod ^
                           -p 8081:8081 ^
@@ -162,28 +210,55 @@ pipeline {
                           ${IMAGE_NAME}:${params.VERSION}
                     """
 
-                    bat "docker rm -f retail-app-candidate"
+                    echo "New production version started."
 
+                    /*
+                     * Candidate is no longer required.
+                     */
+                    bat "docker rm -f retail-app-candidate 2>NUL || exit /b 0"
+
+                    /*
+                     * Final production health check.
+                     */
                     bat """
                         powershell -Command "Start-Sleep -Seconds 10"
                     """
 
                     def finalHealth = bat(
-                        script: 'docker inspect -f "{{.State.Health.Status}}" retail-app-prod',
+                        script: '@echo off\ndocker inspect -f "{{.State.Health.Status}}" retail-app-prod',
                         returnStdout: true
                     ).trim()
 
-                    echo "Final production health: ${finalHealth}"
-                    echo "Old production image: ${oldImage}"
-                    echo "New production image: ${IMAGE_NAME}:${params.VERSION}"
+                    echo "======================================"
+                    echo "OLD VERSION   : ${oldImage}"
+                    echo "NEW VERSION   : ${IMAGE_NAME}:${params.VERSION}"
+                    echo "FINAL HEALTH  : ${finalHealth}"
+                    echo "======================================"
 
+                    /*
+                     * If final production health check fails,
+                     * automatically restore old production image.
+                     */
                     if (finalHealth != 'healthy') {
+
                         echo "FINAL HEALTH CHECK FAILED"
-                        rollbackProduction(oldImage)
-                        error("Production deployment failed. Automatic rollback completed.")
+                        echo "Starting automatic rollback..."
+
+                        if (oldImage != 'NONE' && oldImage != '') {
+                            rollbackProduction(oldImage)
+                        } else {
+                            echo "No previous production image available."
+                        }
+
+                        error("Production deployment failed. Automatic rollback was required.")
                     }
 
-                    echo "Production deployment successful."
+                    echo "======================================"
+                    echo "PRODUCTION DEPLOYMENT SUCCESSFUL"
+                    echo "OLD VERSION : ${oldImage}"
+                    echo "NEW VERSION : ${IMAGE_NAME}:${params.VERSION}"
+                    echo "FINAL STATE : SUCCESS"
+                    echo "======================================"
                 }
             }
         }
@@ -197,6 +272,7 @@ pipeline {
 
             steps {
                 script {
+
                     def previousImage = 'NONE'
 
                     if (fileExists('previous-production.txt')) {
@@ -207,23 +283,31 @@ pipeline {
                         error("No previous production image is recorded.")
                     }
 
-                    echo "Rolling back to: ${previousImage}"
+                    echo "======================================"
+                    echo "MANUAL ROLLBACK"
+                    echo "Restoring: ${previousImage}"
+                    echo "======================================"
 
                     bat "docker rm -f retail-app-prod 2>NUL || exit /b 0"
+
+                    def previousVersion =
+                        previousImage.substring(previousImage.lastIndexOf(':') + 1)
 
                     bat """
                         docker run -d --name retail-app-prod ^
                           -p 8081:8081 ^
-                          -e APP_VERSION=${previousImage.split(':')[-1]} ^
+                          -e APP_VERSION=${previousVersion} ^
                           -e APP_ENV=PRODUCTION ^
                           -e PAYMENT_STATUS=FIXED ^
                           ${previousImage}
                     """
 
-                    bat "powershell -Command \"Start-Sleep -Seconds 10\""
+                    bat """
+                        powershell -Command "Start-Sleep -Seconds 10"
+                    """
 
                     def rollbackHealth = bat(
-                        script: 'docker inspect -f "{{.State.Health.Status}}" retail-app-prod',
+                        script: '@echo off\ndocker inspect -f "{{.State.Health.Status}}" retail-app-prod',
                         returnStdout: true
                     ).trim()
 
@@ -233,7 +317,11 @@ pipeline {
                         error("Rollback failed: restored production container is unhealthy")
                     }
 
-                    echo "Rollback completed successfully."
+                    echo "======================================"
+                    echo "ROLLBACK COMPLETED SUCCESSFULLY"
+                    echo "RESTORED VERSION : ${previousVersion}"
+                    echo "FINAL STATE      : SUCCESS"
+                    echo "======================================"
                 }
             }
         }
@@ -250,18 +338,25 @@ pipeline {
     }
 }
 
+
+/*
+ * Automatic rollback function
+ */
 def rollbackProduction(String oldImage) {
 
     if (oldImage == 'NONE' || oldImage == '') {
         error("Automatic rollback cannot proceed because no previous production image was recorded.")
     }
 
+    echo "======================================"
     echo "AUTOMATIC ROLLBACK"
-    echo "Restoring previous production image: ${oldImage}"
+    echo "Restoring previous image: ${oldImage}"
+    echo "======================================"
 
     bat "docker rm -f retail-app-prod 2>NUL || exit /b 0"
 
-    def oldVersion = oldImage.substring(oldImage.lastIndexOf(':') + 1)
+    def oldVersion =
+        oldImage.substring(oldImage.lastIndexOf(':') + 1)
 
     bat """
         docker run -d --name retail-app-prod ^
@@ -272,10 +367,12 @@ def rollbackProduction(String oldImage) {
           ${oldImage}
     """
 
-    bat "powershell -Command \"Start-Sleep -Seconds 10\""
+    bat """
+        powershell -Command "Start-Sleep -Seconds 10"
+    """
 
     def rollbackHealth = bat(
-        script: 'docker inspect -f "{{.State.Health.Status}}" retail-app-prod',
+        script: '@echo off\ndocker inspect -f "{{.State.Health.Status}}" retail-app-prod',
         returnStdout: true
     ).trim()
 
