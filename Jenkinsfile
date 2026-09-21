@@ -58,6 +58,7 @@ pipeline {
 
         stage('Validate Git Version') {
             steps {
+                bat "git fetch --tags --force origin"
                 script {
                     def tagExists = bat(
                         script: "git tag --list v${params.VERSION}",
