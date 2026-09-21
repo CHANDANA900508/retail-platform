@@ -10,3 +10,8 @@ def test_health():
     client = app.test_client()
     response = client.get("/health")
     assert response.status_code == 200
+def test_environment():
+    client = app.test_client()
+    response = client.get("/")
+    data = response.get_json()
+    assert "environment" in data    
