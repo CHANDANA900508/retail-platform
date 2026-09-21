@@ -219,9 +219,7 @@ pipeline {
                     /*
                      * Final production health check.
                      */
-                    bat """
-                        powershell -Command "Start-Sleep -Seconds 10"
-                    """
+                    sleep(time: 10, unit: 'SECONDS')
 
                     def finalHealth = bat(
                         script: '@echo off\ndocker inspect -f "{{.State.Health.Status}}" retail-app-prod',
