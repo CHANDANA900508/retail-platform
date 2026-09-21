@@ -102,7 +102,7 @@ pipeline {
                     ).trim()
 
                     def oldImage = bat(
-                        script: "docker inspect -f \"{{.Config.Image}}\" retail-app-prod 2>NUL",
+                      script: "docker inspect -f \"{{.Config.Image}}\" retail-app-prod 2>NUL || exit /b 0",
                         returnStdout: true
                     ).trim()
 
