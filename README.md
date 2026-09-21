@@ -3,7 +3,7 @@ Enterprise Reatail Platform deployment project.
 ## Appliction
 
 - Application: Retail Platform 
-- Version: 4.3.0 Development Build
+- Version: 4.3.0
 - Port: 8081
 - Technology: Python Flask
 - Containerization: Docker
