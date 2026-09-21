@@ -4,7 +4,7 @@ import os
 app = Flask(__name__)
 
 VERSION = os.getenv("APP_VERSION", "4.2.0")
-PAYMENT_STATUS = os.getenv("PAYMENT_STATUS", "FIXED")
+PAYMENT_STATUS = os.getenv("PAYMENT_STATUS", "CONFLICT_BRANCH")
 
 
 @app.route("/")
