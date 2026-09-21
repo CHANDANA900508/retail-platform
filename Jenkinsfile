@@ -101,14 +101,8 @@ pipeline {
                         returnStdout: true
                     ).trim()
 
-                    def oldImage = bat(
-                      script: "docker inspect -f \"{{.Config.Image}}\" retail-app-prod 2>NUL || exit /b 0",
-                        returnStdout: true
-                    ).trim()
-
-                    if (oldImage == '') {
-                        oldImage = 'NONE'
-                    }
+                    
+                    
 
                     echo "Previous production container: ${oldContainer ?: 'NONE'}"
                     echo "Previous production image    : ${oldImage}"
