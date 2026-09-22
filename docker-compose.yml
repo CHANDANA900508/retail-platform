@@ -2,15 +2,25 @@ services:
   retail-app:
     build:
       context: .
+      args:
+        APP_VERSION: ${APP_VERSION:-4.2.0}
     image: retail-app:${APP_VERSION:-4.2.0}
     container_name: retail-app
     ports:
       - "8081:8081"
     environment:
       APP_VERSION: ${APP_VERSION:-4.2.0}
+      APP_ENV: ${APP_ENV:-UAT}
       PAYMENT_STATUS: ${PAYMENT_STATUS:-FIXED}
     networks:
-      retail-network:
+      - retail-network
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512M
 
 networks:
   retail-network:
+    name: retail-network
+    driver: bridge
